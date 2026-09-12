@@ -227,7 +227,25 @@ async function buildComponentsForSituation(
   return components.slice(0, limit)
 }
 
+// Punto de entrada publico: LIVE (Claude con tool-calling real, ver
+// lib/agent/llm-orchestrator.ts) cuando hay ANTHROPIC_API_KEY configurado;
+// si no hay llave, o LIVE truena por cualquier motivo (red, rate limit,
+// respuesta mal formada del modelo), cae a FALLBACK determinista — la demo
+// nunca debe quedarse sin interfaz frente al jurado (ver docs/MCP.md,
+// seccion 'LIVE vs FALLBACK').
 export async function runOrchestrator(customerId: string, message: string): Promise<OrchestratorResult> {
+  if (process.env.ANTHROPIC_API_KEY) {
+    try {
+      const { runLiveOrchestrator } = await import('./llm-orchestrator')
+      return await runLiveOrchestrator(customerId, message)
+    } catch (error) {
+      console.error('[orchestrator] LIVE (Claude tool-calling) fallo, usando FALLBACK', error)
+    }
+  }
+  return runFallbackOrchestrator(customerId, message)
+}
+
+async function runFallbackOrchestrator(customerId: string, message: string): Promise<OrchestratorResult> {
   const activityLog: McpActivityEntry[] = []
   const customer = getCustomer(customerId)
 

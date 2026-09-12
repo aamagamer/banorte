@@ -1,5 +1,7 @@
 import type { McpToolDefinition } from './types'
 import { getCustomer, type Customer } from '@/lib/demo-data/customers'
+import { getUsdMxnFix, getInpcAnnualInflation } from '@/lib/external/banxico'
+import { getFrankfurterRate } from '@/lib/external/frankfurter'
 
 import travelingSituation from '@/context/situations/traveling.json'
 import payingSituation from '@/context/situations/paying.json'
@@ -143,22 +145,56 @@ const calculateGoalProjection: McpToolDefinition<
 // Data Adapter" para el plan de conectar Banxico/INEGI reales)
 // ---------------------------------------------------------------------------
 
-const getExchangeRate: McpToolDefinition<{ from: string; to: string }, { from: string; to: string; rate: number; source: string }> = {
+const getExchangeRate: McpToolDefinition<
+  { from: string; to: string },
+  { from: string; to: string; rate: number; source: string; asOf?: string }
+> = {
   name: 'get_exchange_rate',
-  description: 'Regresa el tipo de cambio entre dos monedas. En modo demo usa un valor simulado realista.',
+  description:
+    'Regresa el tipo de cambio real entre dos monedas (Banxico SIE para USD-MXN/MXN-USD, Frankfurter para el resto). Si ambas fuentes reales fallan, regresa un valor demo para no interrumpir la vista.',
   permission: 'read',
-  run: ({ from, to }) => {
-    const table: Record<string, number> = { 'USD-MXN': 18.62, 'MXN-USD': 1 / 18.62, 'EUR-MXN': 20.05 }
-    const key = `${from.toUpperCase()}-${to.toUpperCase()}`
-    return { from, to, rate: table[key] ?? 1, source: 'Demo Mode (simulado) — produccion: Banxico SIE API' }
+  run: async ({ from, to }) => {
+    const pair = `${from.toUpperCase()}-${to.toUpperCase()}`
+    const demoTable: Record<string, number> = { 'USD-MXN': 18.62, 'MXN-USD': 1 / 18.62, 'EUR-MXN': 20.05 }
+    try {
+      if (pair === 'USD-MXN' || pair === 'MXN-USD') {
+        const { rate, date } = await getUsdMxnFix()
+        return {
+          from,
+          to,
+          rate: pair === 'USD-MXN' ? rate : 1 / rate,
+          source: 'Banxico SIE (serie SF43718, tipo de cambio FIX)',
+          asOf: date,
+        }
+      }
+      const { rate, date } = await getFrankfurterRate(from, to)
+      return { from, to, rate, source: 'Frankfurter (frankfurter.dev, datos BCE)', asOf: date }
+    } catch (error) {
+      console.error('[get_exchange_rate] fuentes reales fallaron, usando demo', error)
+      return {
+        from,
+        to,
+        rate: demoTable[pair] ?? 1,
+        source: 'Demo Mode (simulado) — fuentes reales no disponibles en este momento',
+      }
+    }
   },
 }
 
-const getInflation: McpToolDefinition<{ country?: string }, { annualRate: number; period: string; source: string }> = {
+const getInflation: McpToolDefinition<{ country?: string }, { annualRate: number; period: string; source: string; asOf?: string }> = {
   name: 'get_inflation',
-  description: 'Regresa la inflacion anual estimada. En modo demo usa un valor simulado realista para Mexico.',
+  description:
+    'Regresa la inflacion anual real (Banxico SIE, INPC serie SP1, variacion contra el mismo mes del año anterior). Si Banxico falla, regresa un valor demo.',
   permission: 'read',
-  run: () => ({ annualRate: 4.3, period: 'anual', source: 'Demo Mode (simulado) — produccion: INEGI INPC' }),
+  run: async () => {
+    try {
+      const { annualRate, asOf } = await getInpcAnnualInflation()
+      return { annualRate, period: 'anual', source: 'Banxico SIE (serie SP1, INPC, variacion anual)', asOf }
+    } catch (error) {
+      console.error('[get_inflation] Banxico fallo, usando demo', error)
+      return { annualRate: 4.3, period: 'anual', source: 'Demo Mode (simulado) — Banxico no disponible en este momento' }
+    }
+  },
 }
 
 const calculatePurchasingPowerProjection: McpToolDefinition<
@@ -169,7 +205,7 @@ const calculatePurchasingPowerProjection: McpToolDefinition<
   description:
     'Proyecta el ahorro nominal del cliente contra su poder adquisitivo real (descontando inflacion) mes a mes, para comparar ahorro vs inflacion.',
   permission: 'read',
-  run: ({ customerId, months = 6 }) => {
+  run: async ({ customerId, months = 6 }) => {
     const customer = getCustomer(customerId)
     const savingsBalance = customer.accounts
       .filter((a) => a.type === 'savings' && a.context === 'personal')
@@ -178,7 +214,8 @@ const calculatePurchasingPowerProjection: McpToolDefinition<
     const income = personalTransactions.filter((t) => t.amount > 0).reduce((sum, t) => sum + t.amount, 0)
     const expenses = personalTransactions.filter((t) => t.amount < 0).reduce((sum, t) => sum + Math.abs(t.amount), 0)
     const monthlyContribution = Math.max(Math.round((income - expenses) * 0.3), 300)
-    const annualRate = 4.3
+    const inflation = await getInflation.run({})
+    const annualRate = inflation.annualRate
     const monthlyRate = annualRate / 100 / 12
     const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
     const startMonth = new Date().getMonth()
@@ -278,6 +315,7 @@ export const ALLOWED_COMPONENT_TYPES = [
   'comparison_chart',
   'alert',
   'recommendation',
+  'web_insight',
   'exchange_rate',
   'card_controls',
   'business_summary',

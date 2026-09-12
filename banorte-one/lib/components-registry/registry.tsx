@@ -14,6 +14,7 @@ import { RecommendationCard } from '@/components/financial/recommendation-card'
 import { ExchangeRateCard } from '@/components/financial/exchange-rate-card'
 import { CardControls } from '@/components/financial/card-controls'
 import { BusinessSummary } from '@/components/financial/business-summary'
+import { WebInsightCard } from '@/components/financial/web-insight-card'
 
 export interface FinancialComponentProps {
   customer: Customer
@@ -37,6 +38,7 @@ export const COMPONENT_REGISTRY: Record<string, ReactComponentType<FinancialComp
   exchange_rate: ExchangeRateCard as unknown as ReactComponentType<FinancialComponentProps>,
   card_controls: CardControls as unknown as ReactComponentType<FinancialComponentProps>,
   business_summary: BusinessSummary as unknown as ReactComponentType<FinancialComponentProps>,
+  web_insight: WebInsightCard as unknown as ReactComponentType<FinancialComponentProps>,
 }
 
 export function renderComponent(spec: ComponentSpec, customer: Customer) {

@@ -308,3 +308,13 @@ button, input { font: inherit; }
 .comparison-chart-table th, .comparison-chart-table td { text-align: left; padding: 6px 4px; border-top: 1px solid var(--muted); font-size: 12px; }
 .comparison-chart-table thead th { border-top: 0; text-transform: uppercase; font-size: 10px; letter-spacing: .06em; color: var(--soft-ink); }
 .chart-empty { margin: 0; color: var(--soft-ink); font-size: 12px; }
+
+.web-insight-header { display: flex; align-items: center; gap: 8px; }
+.web-insight-header svg { width: 15px; color: var(--red); }
+.web-insight-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.web-insight-list li { border-top: 1px solid var(--muted); padding-top: 10px; }
+.web-insight-list li:first-child { border-top: 0; padding-top: 0; }
+.web-insight-list strong { display: block; font-size: 13px; color: var(--ink); }
+.web-insight-list p { margin: 4px 0 6px; font-size: 12.5px; color: var(--soft-ink); line-height: 1.45; }
+.web-insight-source { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--deep-red); font-weight: 700; }
+.web-insight-source svg { width: 12px; }

@@ -57,11 +57,17 @@ real (no solo como permiso).
   API y sin depender de latencia de red durante la demo.
 - **LIVE (con `ANTHROPIC_API_KEY`):** el mismo catalogo de tools (`TOOLS` en
   `lib/mcp/tools.ts`) se expone a Claude via tool-calling
-  (`@anthropic-ai/sdk`), y es el modelo quien decide la secuencia de llamadas.
-  Es el modo recomendado para la demo final ante jurado (el jurado deberia
-  ver tool-calling real, no solo el motor de reglas) — pendiente de cablear
-  el loop de tool-calling en `lib/agent/orchestrator.ts` (hoy solo implementa
-  FALLBACK; el catalogo de tools ya esta listo para reutilizarse en LIVE).
+  (`@anthropic-ai/sdk`, ver `lib/agent/llm-orchestrator.ts`), mas la tool nativa
+  `web_search` de la Messages API para recomendaciones que requieren
+  informacion actual (viajes, comparar productos, etc — se renderizan en un
+  componente nuevo, `web_insight`, siempre con la fuente citada). Es el modelo
+  quien decide que tools llamar, en que orden, y cuando usar la busqueda web.
+  `runOrchestrator` (en `lib/agent/orchestrator.ts`) prueba LIVE primero cuando
+  hay `ANTHROPIC_API_KEY`, y si Claude falla por cualquier motivo (red, rate
+  limit, JSON mal formado) cae automaticamente a FALLBACK — la demo nunca se
+  queda sin interfaz frente al jurado. El customerId real de la sesion se
+  inyecta server-side en cada tool call; el modelo no puede pedir datos de
+  otro cliente (MCP tool isolation, ver docs/SECURITY.md).
 
 ## Ejemplo de llamada
 
