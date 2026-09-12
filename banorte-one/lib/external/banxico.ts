@@ -10,7 +10,7 @@
 //
 // Series usadas (catalogo publico de Banxico):
 // - SF43718: tipo de cambio FIX peso/dolar.
-// - SP1: INPC (Indice Nacional de Precios al Consumidor), nivel mensual.
+// - SP30578: INPC, variacion % anual ya calculada por Banxico.
 // - SF60648: TIIE a 28 dias.
 
 const BANXICO_BASE = 'https://www.banxico.org.mx/SieAPIRest/service/v1/series'
@@ -52,12 +52,6 @@ function parseNumeric(dato: BanxicoDato): number {
   return Number(dato.dato.replace(/,/g, ''))
 }
 
-function formatBanxicoDate(date: Date): string {
-  const dd = String(date.getDate()).padStart(2, '0')
-  const mm = String(date.getMonth() + 1).padStart(2, '0')
-  return `${dd}/${mm}/${date.getFullYear()}`
-}
-
 export async function getUsdMxnFix(): Promise<{ rate: number; date: string }> {
   const datos = await fetchBanxicoSeries('SF43718', 'oportuno')
   const last = datos[datos.length - 1]
@@ -74,27 +68,16 @@ export async function getTiie28(): Promise<{ rate: number; date: string }> {
   return { rate, date: last.fecha }
 }
 
-// El INPC es mensual y Banxico no siempre expone una serie separada ya
-// calculada de "variacion % anual", asi que pedimos ~14 meses de historial
-// del nivel (SP1) y calculamos la inflacion anual igual que la metodologia
-// oficial: INPC del mes actual vs INPC del mismo mes del año anterior.
+// SP30578: INPC, variacion % anual, ya calculada por el propio Banxico
+// (confirmado contra un servidor MCP de Banxico en produccion —
+// github.com/cfocoder/banxico_mcp — que documenta SP30578 como "Annual
+// Inflation"). Pedimos "oportuno" (el dato mas reciente publicado) en vez de
+// calcularla nosotros mismos a partir de niveles del INPC, para no arriesgar
+// otro id de serie equivocado.
 export async function getInpcAnnualInflation(): Promise<{ annualRate: number; asOf: string }> {
-  const today = new Date()
-  const start = new Date(today)
-  start.setMonth(start.getMonth() - 14)
-
-  const datos = await fetchBanxicoSeries('SP1', { start: formatBanxicoDate(start), end: formatBanxicoDate(today) })
-  const numeric = datos
-    .map((d) => ({ fecha: d.fecha, valor: parseNumeric(d) }))
-    .filter((d) => !Number.isNaN(d.valor))
-
-  if (numeric.length < 13) {
-    throw new Error('Banxico SIE no regreso suficiente historial de INPC para calcular la inflacion anual')
-  }
-
-  const latest = numeric[numeric.length - 1]
-  const yearAgo = numeric[numeric.length - 13]
-  const annualRate = (latest.valor / yearAgo.valor - 1) * 100
-
-  return { annualRate: Math.round(annualRate * 10) / 10, asOf: latest.fecha }
+  const datos = await fetchBanxicoSeries('SP30578', 'oportuno')
+  const last = datos[datos.length - 1]
+  const annualRate = parseNumeric(last)
+  if (Number.isNaN(annualRate)) throw new Error('Banxico SIE regreso una inflacion anual no numerica')
+  return { annualRate, asOf: last.fecha }
 }

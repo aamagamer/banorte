@@ -12,6 +12,14 @@
 // la sesion NUNCA se expone como parametro que el modelo pueda decidir — se
 // inyecta server-side en cada llamada a tool, y cualquier customerId que el
 // modelo intente mandar se ignora.
+//
+// Robustez (requerido explicitamente: "que no falle"): esta version agrega
+// (1) un parser de la respuesta final tolerante a variaciones de formato,
+// (2) un limite de rondas mas alto mas un round final forzado sin tools para
+// garantizar que siempre haya una respuesta de texto, (3) un reintento unico
+// ante errores de red transitorios, y (4) una regla explicita en el system
+// prompt para que el modelo use busqueda web en vez de quedarse sin
+// responder cuando las tools locales no cubren lo que se pregunta.
 
 import Anthropic from '@anthropic-ai/sdk'
 import { callTool } from '@/lib/mcp/registry'
@@ -21,8 +29,9 @@ import { validateUISchema, type UISchema } from '@/lib/components-registry/schem
 import type { OrchestratorResult } from './orchestrator'
 
 const MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5'
-const MAX_TOOL_ROUNDS = 6
+const MAX_TOOL_ROUNDS = 8
 const MAX_WEB_SEARCHES = 3
+const MAX_TOKENS = 2048
 
 let client: Anthropic | null = null
 function getClient(): Anthropic {
@@ -156,10 +165,11 @@ Cuentas conocidas (ya las tienes, no necesitas volver a pedirlas si no vas a usa
 ${COMPONENT_CATALOG_PROMPT}
 
 Reglas:
-1. Llama las tools que necesites (puedes llamar varias, y tambien puedes usar la busqueda web si la situacion lo amerita: planeacion de viajes, comparar un producto o gasto especifico, o cualquier pregunta que dependa de informacion actual). No pidas ni asumas un customerId, ya sabes con quien hablas — las tools locales siempre usan al cliente actual.
-2. Maximo 6 componentes en total.
-3. No das asesoria financiera personalizada como si fuera garantizada: usa lenguaje de sugerencia ("podrias", "considera", "aproximadamente"), nunca certeza absoluta, y para "recommendation"/"web_insight" evita prometer resultados.
-4. Cuando ya tengas todo lo que necesitas (deja de llamar tools), tu ULTIMA respuesta debe tener EXACTAMENTE este formato, sin nada despues del bloque de codigo:
+1. Llama las tools que necesites (puedes llamar varias). No pidas ni asumas un customerId, ya sabes con quien hablas — las tools locales siempre usan al cliente actual.
+2. BUSQUEDA WEB OBLIGATORIA cuando aplique: si para responder necesitas un dato que ninguna tool local cubre (precios actuales, viajes, comparar un producto o servicio, noticias, tipos de cambio de monedas que get_exchange_rate no soporte, o cualquier pregunta que dependa de informacion vigente de internet), DEBES usar la tool web_search en vez de quedarte sin responder, decir que no tienes esa informacion, o inventar un numero. Nunca dejes una pregunta sin resolver pudiendo buscarla.
+3. Maximo 6 componentes en total.
+4. No das asesoria financiera personalizada como si fuera garantizada: usa lenguaje de sugerencia ("podrias", "considera", "aproximadamente"), nunca certeza absoluta, y para "recommendation"/"web_insight" evita prometer resultados.
+5. Cuando ya tengas todo lo que necesitas (deja de llamar tools), tu ULTIMA respuesta debe tener EXACTAMENTE este formato, sin nada despues del bloque de codigo:
 
 Primero 1 a 3 oraciones en español, tono cercano y claro, explicando que le preparaste al cliente (esto se muestra tal cual en el chat).
 
@@ -177,14 +187,41 @@ interface ParsedFinalResponse {
   rawSchema: unknown
 }
 
+// Tolerante a variaciones de formato: acepta un fence con o sin el tag
+// "json", y si Claude no puso ningun fence (o la respuesta se corto antes de
+// cerrarlo), intenta extraer el primer objeto JSON balanceado del texto como
+// ultimo recurso. Solo lanza si de verdad no hay nada parseable — eso es lo
+// unico que debe tumbar LIVE y activar el FALLBACK determinista.
 function parseFinalText(text: string): ParsedFinalResponse {
-  const match = text.match(/```json\s*([\s\S]*?)```/)
-  if (!match) {
-    throw new Error('La respuesta final de Claude no incluyo el bloque ```json con el UI schema')
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (fenced) {
+    const reply = text.slice(0, fenced.index).trim() || 'Aqui tienes tu vista actualizada.'
+    const rawSchema = JSON.parse(fenced[1].trim())
+    return { reply, rawSchema }
   }
-  const reply = text.slice(0, match.index).trim() || 'Aqui tienes tu vista actualizada.'
-  const rawSchema = JSON.parse(match[1])
-  return { reply, rawSchema }
+
+  const braceStart = text.indexOf('{')
+  if (braceStart !== -1) {
+    let depth = 0
+    for (let i = braceStart; i < text.length; i++) {
+      if (text[i] === '{') depth++
+      else if (text[i] === '}') {
+        depth--
+        if (depth === 0) {
+          const candidate = text.slice(braceStart, i + 1)
+          try {
+            const rawSchema = JSON.parse(candidate)
+            const reply = text.slice(0, braceStart).trim() || 'Aqui tienes tu vista actualizada.'
+            return { reply, rawSchema }
+          } catch {
+            break
+          }
+        }
+      }
+    }
+  }
+
+  throw new Error('La respuesta final de Claude no incluyo un UI schema JSON valido')
 }
 
 async function executeTool(name: string, rawInput: unknown, customerId: string, activityLog: McpActivityEntry[]) {
@@ -192,6 +229,29 @@ async function executeTool(name: string, rawInput: unknown, customerId: string, 
   // modelo haya mandado (o no haya mandado) — MCP tool isolation.
   const input = { ...(rawInput as Record<string, unknown>), customerId }
   return callTool(name, input, activityLog)
+}
+
+function isTransientNetworkError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error)
+  return /ENOTFOUND|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|fetch failed|Connection error/i.test(msg)
+}
+
+// Reintenta una sola vez ante errores de red transitorios (DNS, conexion
+// reiniciada, etc). Cualquier otro error (auth, credito insuficiente, rate
+// limit) se propaga de inmediato para que el LIVE→FALLBACK de mas arriba lo
+// capture sin perder tiempo reintentando algo que no es transitorio.
+async function createMessageWithRetry(
+  anthropic: Anthropic,
+  params: Anthropic.MessageCreateParamsNonStreaming,
+): Promise<Anthropic.Message> {
+  try {
+    return await anthropic.messages.create(params)
+  } catch (error) {
+    if (!isTransientNetworkError(error)) throw error
+    console.warn('[llm-orchestrator] error de red transitorio, reintentando una vez:', (error as Error).message)
+    await new Promise((resolve) => setTimeout(resolve, 800))
+    return anthropic.messages.create(params)
+  }
 }
 
 export async function runLiveOrchestrator(customerId: string, message: string): Promise<OrchestratorResult> {
@@ -202,16 +262,30 @@ export async function runLiveOrchestrator(customerId: string, message: string): 
   const customer = getCustomer(customerId)
   const activityLog: McpActivityEntry[] = []
   const anthropic = getClient()
+  const system = buildSystemPrompt(customer)
 
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: message }]
   let finalText = ''
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const response = await anthropic.messages.create({
+    // En la ultima ronda permitida, forzamos una respuesta de texto (sin
+    // tools) para garantizar que SIEMPRE salga algo parseable en vez de
+    // agotar el limite de rondas sin respuesta final.
+    const isLastRound = round === MAX_TOOL_ROUNDS - 1
+    if (isLastRound) {
+      messages.push({
+        role: 'user',
+        content:
+          'Ya tienes suficiente informacion. No llames ninguna tool mas: responde AHORA mismo con tu respuesta final completa, en el formato exacto pedido (texto breve seguido del bloque ```json).',
+      })
+    }
+
+    const response = await createMessageWithRetry(anthropic, {
       model: MODEL,
-      max_tokens: 1500,
-      system: buildSystemPrompt(customer),
+      max_tokens: MAX_TOKENS,
+      system,
       tools: CLAUDE_TOOLS,
+      ...(isLastRound ? { tool_choice: { type: 'none' as const } } : {}),
       messages,
     })
 
