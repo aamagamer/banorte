@@ -1,0 +1,8 @@
+{
+  "id": "sme",
+  "label": "PyME",
+  "description": "Pequena/mediana empresa. Necesita visibilidad de flujo de efectivo, nomina y financiamiento.",
+  "interests": ["flujo_de_efectivo", "cuentas", "nomina", "financiamiento", "analisis"],
+  "priority_topics": ["cash_flow_negocio", "proveedores", "obligaciones", "capital_de_trabajo"],
+  "default_components": ["situation_banner", "business_summary", "transaction_list", "spending_chart", "recommendation"]
+}

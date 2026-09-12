@@ -1,0 +1,13 @@
+{
+  "resolution_strategy": "highest_signal_match_then_priority",
+  "description": "Cuando varias situaciones coinciden con el mensaje del usuario o con sus datos, se resuelve asi:",
+  "steps": [
+    "1. Se cuentan cuantas senales (signals) de cada situacion aparecen en el mensaje/datos.",
+    "2. La situacion con mas coincidencias se vuelve 'primary'.",
+    "3. En empate, gana la situacion con el numero de 'priority' mas bajo (mas urgente).",
+    "4. Las demas situaciones que igual coincidieron se agregan como 'secondary' (maximo 2).",
+    "5. Si ninguna situacion coincide, se usa el layout por defecto del perfil (default_components)."
+  ],
+  "component_limit_per_dashboard": 6,
+  "always_include_if_present": ["situation_banner"]
+}

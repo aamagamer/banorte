@@ -1,0 +1,13 @@
+{
+  "id": "payday",
+  "label": "Dia de quincena",
+  "description": "El usuario acaba de recibir un ingreso (nomina, beca) segun el calendario o los datos.",
+  "signals": ["quincena", "me pagaron", "recibi mi pago", "nomina", "deposito de mi beca"],
+  "priority": 5,
+  "preferred_components": ["situation_banner", "kpi", "goal_progress", "recommendation"],
+  "secondary_components": ["transaction_list"],
+  "next_best_actions": [
+    { "label": "Distribuir mi ingreso", "action": "suggest_income_split" },
+    { "label": "Aportar a mi meta", "action": "contribute_to_goal" }
+  ]
+}

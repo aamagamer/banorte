@@ -1,0 +1,13 @@
+{
+  "id": "saving",
+  "label": "Ahorrando",
+  "description": "El usuario quiere ahorrar o tiene una meta financiera activa (comprar algo, fondo de emergencia, etc).",
+  "signals": ["ahorrar", "ahorro", "meta", "juntar dinero", "fondo de emergencia", "comprar un carro", "comprar una casa"],
+  "priority": 2,
+  "preferred_components": ["situation_banner", "goal_progress", "kpi", "spending_chart", "recommendation"],
+  "secondary_components": ["alert"],
+  "next_best_actions": [
+    { "label": "Simular escenario de ahorro", "action": "simulate_savings" },
+    { "label": "Crear meta financiera", "action": "create_goal" }
+  ]
+}

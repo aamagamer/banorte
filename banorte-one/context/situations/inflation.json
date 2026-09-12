@@ -1,0 +1,13 @@
+{
+  "id": "inflation",
+  "label": "Impacto de la inflacion",
+  "description": "El usuario quiere entender como la inflacion afecta el valor real de su ahorro (poder adquisitivo).",
+  "signals": ["inflacion", "poder adquisitivo", "cuanto vale mi dinero", "vale mi ahorro", "perdiendo valor", "inflacion afecta"],
+  "priority": 3,
+  "preferred_components": ["situation_banner", "comparison_chart", "kpi", "kpi", "recommendation"],
+  "secondary_components": ["goal_progress"],
+  "next_best_actions": [
+    { "label": "Simular una tasa de ahorro mayor", "action": "simulate_savings_scenario" },
+    { "label": "Ver productos de inversion", "action": "show_investment_products" }
+  ]
+}

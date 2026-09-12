@@ -1,0 +1,32 @@
+{
+  "principle": "La IA decide la composicion de la interfaz; la aplicacion controla la logica y los datos.",
+  "tool_permissions": {
+    "read_only": [
+      "get_customer_profile",
+      "get_customer_accounts",
+      "get_customer_transactions",
+      "get_customer_goals",
+      "get_exchange_rate",
+      "get_inflation",
+      "detect_situation",
+      "get_next_best_actions",
+      "get_allowed_components"
+    ],
+    "write_simulation_only": [
+      "generate_ui_schema",
+      "simulate_savings_scenario"
+    ],
+    "requires_explicit_human_authorization": [
+      "transfer_money",
+      "contract_product",
+      "lock_card_permanently"
+    ]
+  },
+  "constraints": [
+    "El MCP nunca ejecuta SQL arbitrario.",
+    "El MCP nunca accede a datos de un customer_id distinto al de la sesion autenticada.",
+    "generate_ui_schema solo puede referenciar tipos de componente listados en get_allowed_components.",
+    "Toda respuesta de generate_ui_schema se valida contra el schema antes de renderizar (ver lib/components-registry/schema.ts).",
+    "Ninguna herramienta de este catalogo puede mover dinero real en el modo demo."
+  ]
+}

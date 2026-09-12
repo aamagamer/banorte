@@ -1,0 +1,8 @@
+{
+  "id": "student",
+  "label": "Estudiante",
+  "description": "Persona física con ingresos variables (beca) y gastos educativos. Suele combinar estudio con un negocio propio o trabajo de medio tiempo.",
+  "interests": ["ahorro", "educacion", "tecnologia", "tarjetas", "metas", "colegiatura"],
+  "priority_topics": ["ahorro", "gastos_mensuales", "beca", "colegiatura", "metas", "transporte", "comida", "tarjetas", "fondo_emergencia"],
+  "default_components": ["situation_banner", "kpi", "goal_progress", "spending_chart", "recommendation"]
+}

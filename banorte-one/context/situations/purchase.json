@@ -1,0 +1,13 @@
+{
+  "id": "purchase",
+  "label": "Compra importante",
+  "description": "El usuario esta evaluando una compra grande y quiere entender el impacto en su presupuesto.",
+  "signals": ["quiero comprar", "compra grande", "meses sin intereses", "msi", "financiar"],
+  "priority": 3,
+  "preferred_components": ["kpi", "goal_progress", "recommendation", "alert"],
+  "secondary_components": ["spending_chart"],
+  "next_best_actions": [
+    { "label": "Simular impacto de la compra", "action": "simulate_purchase" },
+    { "label": "Ver meses sin intereses disponibles", "action": "show_msi_options" }
+  ]
+}

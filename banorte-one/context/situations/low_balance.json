@@ -1,0 +1,13 @@
+{
+  "id": "low_balance",
+  "label": "Saldo bajo",
+  "description": "El saldo disponible del usuario esta por debajo de un umbral de seguridad frente a sus pagos proximos.",
+  "signals": ["poco saldo", "sin dinero", "no me alcanza", "saldo bajo"],
+  "priority": 1,
+  "preferred_components": ["situation_banner", "alert", "kpi", "transaction_list"],
+  "secondary_components": ["recommendation"],
+  "next_best_actions": [
+    { "label": "Ver proximos pagos", "action": "show_upcoming_payments" },
+    { "label": "Revisar gastos recientes", "action": "show_recent_spending" }
+  ]
+}

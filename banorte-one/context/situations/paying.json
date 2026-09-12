@@ -1,0 +1,13 @@
+{
+  "id": "paying",
+  "label": "Por pagar",
+  "description": "El usuario esta a punto de hacer un pago o confirmar una compra.",
+  "signals": ["pagar", "pago", "cobrar", "confirmar compra", "voy a pagar"],
+  "priority": 4,
+  "preferred_components": ["kpi", "account_card", "card_controls"],
+  "secondary_components": ["transaction_list"],
+  "next_best_actions": [
+    { "label": "Confirmar pago", "action": "confirm_payment" },
+    { "label": "Ver saldo disponible", "action": "show_balance" }
+  ]
+}

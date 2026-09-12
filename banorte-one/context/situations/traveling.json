@@ -1,0 +1,14 @@
+{
+  "id": "traveling",
+  "label": "Viajando",
+  "description": "El usuario menciona un viaje, moneda extranjera o gastos internacionales.",
+  "signals": ["viaje", "viajar", "vuelo", "hotel", "dolares", "usd", "extranjero", "internacional", "nueva york", "aeropuerto"],
+  "priority": 3,
+  "preferred_components": ["situation_banner", "exchange_rate", "account_card", "spending_chart", "alert"],
+  "secondary_components": ["card_controls"],
+  "next_best_actions": [
+    { "label": "Ver tipo de cambio", "action": "show_exchange_rate" },
+    { "label": "Bloquear tarjeta si la pierdes", "action": "lock_card" },
+    { "label": "Configurar presupuesto de viaje", "action": "set_travel_budget" }
+  ]
+}

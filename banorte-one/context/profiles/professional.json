@@ -1,0 +1,8 @@
+{
+  "id": "professional",
+  "label": "Profesionista",
+  "description": "Ingreso fijo, interes en inversion y crecimiento patrimonial.",
+  "interests": ["inversion", "ahorro", "tarjetas", "patrimonio"],
+  "priority_topics": ["ahorro", "inversion", "flujo_mensual", "metas"],
+  "default_components": ["situation_banner", "kpi", "goal_progress", "spending_chart", "recommendation"]
+}

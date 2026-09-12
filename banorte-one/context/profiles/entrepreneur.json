@@ -1,0 +1,9 @@
+{
+  "id": "entrepreneur",
+  "label": "Emprendedor",
+  "description": "Tiene finanzas personales y de negocio simultaneas. Ingresos de negocio variables.",
+  "interests": ["flujo_de_efectivo", "credito", "pagos", "ingresos"],
+  "priority_topics": ["cash_flow_negocio", "gastos_negocio", "fondo_emergencia_personal", "separacion_personal_negocio"],
+  "default_components": ["situation_banner", "kpi", "business_summary", "spending_chart", "recommendation"],
+  "dual_context": true
+}

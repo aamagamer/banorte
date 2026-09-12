@@ -1,0 +1,8 @@
+{
+  "id": "parent",
+  "label": "Padre/Madre de familia",
+  "description": "Administra finanzas familiares, gastos recurrentes y planeacion a mediano plazo.",
+  "interests": ["seguros", "ahorro_familiar", "educacion", "gastos_recurrentes"],
+  "priority_topics": ["gastos_recurrentes", "fondo_emergencia", "seguros", "metas_familiares"],
+  "default_components": ["situation_banner", "kpi", "account_card", "transaction_list", "recommendation"]
+}
