@@ -2,17 +2,20 @@
 
 import Image from 'next/image'
 import { useEffect, useRef, useState } from 'react'
-import { Bookmark, Bot, Check, ChevronDown, LogOut, Menu, Send, Sparkles, X } from 'lucide-react'
+import { Bookmark, Bot, Check, ChevronDown, LogOut, Menu, Send, SlidersHorizontal, Sparkles, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { DEMO_CUSTOMERS, type Customer } from '@/lib/demo-data/customers'
-import type { UISchema } from '@/lib/components-registry/schema'
+import type { ComponentSpec, UISchema } from '@/lib/components-registry/schema'
 import type { McpActivityEntry } from '@/lib/mcp/types'
 import { renderComponent } from '@/lib/components-registry/registry'
+import { COMPONENT_LABELS } from '@/lib/components-registry/labels'
 import { McpActivityPanel } from '@/components/financial/mcp-activity-panel'
 import { BanorteGenerating } from '@/components/banorte-generating'
 import { SaveViewDialog, type SaveViewFormInput } from '@/components/save-view-dialog'
 import { MyViewsPanel } from '@/components/my-views-panel'
+import { ComponentToolbar } from '@/components/customize/component-toolbar'
+import { HiddenTray } from '@/components/customize/hidden-tray'
 import type { SavedView } from '@/lib/saved-views/types'
 
 interface ChatMessage {
@@ -61,6 +64,12 @@ export function BankingShell({ email }: { email: string }) {
   const [savedViews, setSavedViews] = useState<SavedView[]>([])
   const [savedViewsLoading, setSavedViewsLoading] = useState(false)
   const [savedViewsError, setSavedViewsError] = useState('')
+  // "Personalizar": el usuario ajusta la vista YA generada (quitar, reordenar,
+  // agrandar un componente) sin volver a pedirle nada al agente. Todo esto se
+  // guarda como campos normales en uiSchema.components (hidden/span, ver
+  // lib/components-registry/schema.ts), asi que "Guardar vista" ya lo
+  // persiste solo, sin tocar el backend.
+  const [customizeMode, setCustomizeMode] = useState(false)
 
   const customer = DEMO_CUSTOMERS[customerId]
 
@@ -83,10 +92,19 @@ export function BankingShell({ email }: { email: string }) {
     setLoading(true)
     setGenPhase('building')
     try {
+      // Le mandamos a Maya lo que el cliente tiene EN PANTALLA ahorita (sin
+      // los componentes que oculto con "Personalizar" — esos no cuentan como
+      // "lo que ve"), para que un mensaje como "cambiale el color" o "quita
+      // la de movimientos" se pueda interpretar como ajuste puntual sobre
+      // esta vista en vez de una situacion nueva (ver "Vista actual en
+      // pantalla" en llm-orchestrator.ts y tryApplyEditIntent en
+      // orchestrator.ts).
+      const currentView = uiSchema ? { ...uiSchema, components: uiSchema.components.filter((c) => !c.hidden) } : null
+
       const response = await fetch('/api/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, customerId }),
+        body: JSON.stringify({ message, customerId, currentView }),
       })
       const data = await response.json()
       setMcpActivity(data.mcpActivity ?? [])
@@ -208,6 +226,54 @@ export function BankingShell({ email }: { email: string }) {
     if (savedViewId === id) setSavedViewId(null)
   }
 
+  // Personalizar vista: las tres acciones de abajo solo mutan uiSchema en
+  // memoria (nunca llaman a /api/agent). "Quitar" marca hidden en vez de
+  // borrar del arreglo — por eso siempre se puede recuperar desde la tira de
+  // "Ocultos" con los mismos datos, sin perder la vista completa.
+  function hideComponent(id: string) {
+    setUiSchema((current) =>
+      current ? { ...current, components: current.components.map((c) => (c.id === id ? { ...c, hidden: true } : c)) } : current,
+    )
+  }
+
+  function restoreComponent(id: string) {
+    setUiSchema((current) =>
+      current ? { ...current, components: current.components.map((c) => (c.id === id ? { ...c, hidden: false } : c)) } : current,
+    )
+  }
+
+  function toggleComponentSize(id: string) {
+    setUiSchema((current) =>
+      current
+        ? { ...current, components: current.components.map((c) => (c.id === id ? { ...c, span: c.span === 2 ? 1 : 2 } : c)) }
+        : current,
+    )
+  }
+
+  // Reordena solo entre los componentes VISIBLES (los ocultos no cuentan para
+  // "arriba"/"abajo"). Renumera priority 1..n sobre el nuevo orden y reordena
+  // el arreglo por esa misma priority, para que guardar-y-reabrir la vista
+  // reproduzca el mismo orden.
+  function moveComponent(id: string, direction: 'up' | 'down') {
+    setUiSchema((current) => {
+      if (!current) return current
+      const visible = current.components.filter((c) => !c.hidden)
+      const index = visible.findIndex((c) => c.id === id)
+      const swapIndex = direction === 'up' ? index - 1 : index + 1
+      if (index === -1 || swapIndex < 0 || swapIndex >= visible.length) return current
+
+      const reordered = [...visible]
+      ;[reordered[index], reordered[swapIndex]] = [reordered[swapIndex], reordered[index]]
+      const priorityById = new Map(reordered.map((c, i) => [c.id, i + 1]))
+
+      const components = current.components
+        .map((c) => (priorityById.has(c.id) ? { ...c, priority: priorityById.get(c.id)! } : c))
+        .sort((a, b) => a.priority - b.priority)
+
+      return { ...current, components }
+    })
+  }
+
   const dashboardEyebrow = genPhase !== 'idle' ? 'Diseñando tu vista…' : uiSchema ? 'Tu banca, ahora' : 'Espacio del cliente'
   const dashboardTitle = uiSchema?.title ?? `Hola, ${customer.name.split(' ')[0]}`
 
@@ -295,6 +361,16 @@ export function BankingShell({ email }: { email: string }) {
               {uiSchema?.explanation && <p>{uiSchema.explanation}</p>}
             </div>
             <div className="dashboard-heading-actions">
+              {uiSchema && genPhase === 'idle' && uiSchema.components.length > 0 && (
+                <button
+                  type="button"
+                  className={`customize-toggle${customizeMode ? ' is-active' : ''}`}
+                  onClick={() => setCustomizeMode((open) => !open)}
+                  aria-pressed={customizeMode}
+                >
+                  <SlidersHorizontal aria-hidden="true" /> {customizeMode ? 'Listo' : 'Personalizar'}
+                </button>
+              )}
               {uiSchema && genPhase === 'idle' && (
                 <button
                   type="button"
@@ -320,17 +396,46 @@ export function BankingShell({ email }: { email: string }) {
           {genPhase !== 'idle' ? (
             <BanorteGenerating phase={genPhase === 'converging' ? 'converging' : 'building'} />
           ) : uiSchema && uiSchema.components.length > 0 ? (
-            <div className="component-grid">
-              {uiSchema.components.map((spec, index) => {
-                const rendered = renderComponent(spec, customer)
-                if (!rendered) return null
-                return (
-                  <div key={rendered.key} className="dashboard-card-enter" style={{ animationDelay: `${index * 70}ms` }}>
-                    {rendered.element}
-                  </div>
-                )
-              })}
-            </div>
+            <>
+              {customizeMode && (
+                <HiddenTray hidden={uiSchema.components.filter((c) => c.hidden)} onRestore={restoreComponent} />
+              )}
+              <div className="component-grid">
+                {(() => {
+                  const visible = uiSchema.components.filter((c: ComponentSpec) => !c.hidden)
+                  return visible.map((spec, index) => {
+                    const rendered = renderComponent(spec, customer)
+                    if (!rendered) return null
+                    const isExpanded = spec.span === 2
+                    const cardClass = [
+                      'dashboard-card-enter',
+                      'component-card-shell',
+                      customizeMode && 'is-customizable',
+                      isExpanded && 'dashboard-card-span-2',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')
+                    return (
+                      <div key={rendered.key} className={cardClass} style={{ animationDelay: `${index * 70}ms` }}>
+                        {rendered.element}
+                        {customizeMode && (
+                          <ComponentToolbar
+                            label={COMPONENT_LABELS[spec.type] ?? spec.type}
+                            canMoveUp={index > 0}
+                            canMoveDown={index < visible.length - 1}
+                            isExpanded={isExpanded}
+                            onMoveUp={() => moveComponent(spec.id, 'up')}
+                            onMoveDown={() => moveComponent(spec.id, 'down')}
+                            onToggleSize={() => toggleComponentSize(spec.id)}
+                            onHide={() => hideComponent(spec.id)}
+                          />
+                        )}
+                      </div>
+                    )
+                  })
+                })()}
+              </div>
+            </>
           ) : (
             <div className="dashboard-empty">
               <Sparkles aria-hidden="true" />
