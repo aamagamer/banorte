@@ -140,7 +140,7 @@ const COMPONENT_CATALOG_PROMPT = `Catalogo cerrado de componentes de UI (usa "ty
 - account_card {context?: "personal"|"business"}: tarjetas de cuentas del cliente.
 - transaction_list {context?, limit?}: tabla de movimientos recientes.
 - goal_progress {goalId}: barra de progreso de una meta financiera EXISTENTE del cliente (usa el id real de get_customer_goals).
-- spending_chart {context?}: barras de gasto por categoria.
+- spending_chart {context?, variant?: "bar"|"pie", accent?: "red"|"blue"|"green"|"purple"|"black", categoryColors?: string[]}: gasto por categoria (ordenadas de mayor a menor gasto, la posicion 0 es la de mas gasto). "bar" (default) son barras verticales; usa "pie" SOLO si el cliente pide explicitamente pastel/dona/circular. Colores (nombres EXACTOS de la lista "red"|"blue"|"green"|"purple"|"black", nunca un hex): no pongas "accent" ni "categoryColors" si el cliente no pidio cambiar el color — sin ninguno de los dos ya sale colorido por categoria por default. Usa "accent" cuando el cliente pide UN color para toda la grafica ("cambiale el color a azul"). Usa "categoryColors" (array por POSICION, no por nombre de categoria) SOLO cuando el cliente pide colores especificos y distintos para categorias distintas ("ponle rojo y azul" -> categoryColors: ["red","blue"]); dejalo mas corto que el numero de categorias si solo menciono algunas.
 - comparison_chart {title?, months: [{month, nominal, real}], inflationAnnual?}: linea comparando ahorro nominal vs poder de compra real. Llena "months" con la salida real de calculate_purchasing_power_projection.
 - alert {severity: "info"|"warning"|"critical", title, message}: alerta breve.
 - recommendation {title, message}: una recomendacion derivada de los DATOS PROPIOS del cliente (no de busqueda web).
@@ -149,7 +149,7 @@ const COMPONENT_CATALOG_PROMPT = `Catalogo cerrado de componentes de UI (usa "ty
 - card_controls {context?}: control de bloqueo/desbloqueo de tarjetas.
 - business_summary {}: resumen del negocio del cliente (solo si el cliente tiene negocio).`
 
-function buildSystemPrompt(customer: Customer): string {
+function buildSystemPrompt(customer: Customer, currentView?: UISchema | null): string {
   const accountsSummary = customer.accounts
     .map((a) => `${a.label} (${a.context}, ${a.type}): ${a.currency} ${a.balance.toLocaleString('es-MX')}`)
     .join('; ')
@@ -157,15 +157,30 @@ function buildSystemPrompt(customer: Customer): string {
     ? `Tiene un negocio: ${customer.business.name} (ingreso mensual ~${customer.business.revenueMonthly}, gasto mensual ~${customer.business.expensesMonthly}).`
     : 'No tiene negocio registrado.'
 
-  return `Eres Maya, el agente financiero de Banorte One. NO eres un chatbot generico de preguntas y respuestas: tu trabajo es decidir que datos reales necesitas (usando las tools disponibles) y luego describir la interfaz que el cliente debe ver, como un JSON declarativo. Nunca generas HTML ni JSX, y nunca inventas cifras: cada numero que pongas en un componente debe venir de una tool que llamaste en este turno.
+  // Si el cliente ya tiene una vista en pantalla, se la mandamos para que
+  // Maya pueda EDITARLA (cambiar color, tipo de grafica, tamaño, quitar un
+  // componente, reordenar) en vez de regenerar todo desde cero cada vez que
+  // el mensaje es un ajuste puntual sobre lo que ya ve. Solo mandamos
+  // type/id/props (no priority/hidden/span): eso es lo unico que a Maya le
+  // toca decidir; el resto lo administra el cliente (ver banking-shell.tsx).
+  const currentViewSection =
+    currentView && currentView.components.length > 0
+      ? `\nVista actual en pantalla del cliente (ANTES de este mensaje):
+${JSON.stringify(currentView.components.map((c) => ({ id: c.id, type: c.type, props: c.props })))}
+
+Si el mensaje del cliente pide AJUSTAR algo que ya esta en esta lista (cambiar color/acento, cambiar tipo de grafica, agrandar o achicar, quitar, o cualquier modificacion sobre un componente EXISTENTE), tu respuesta final debe regresar TODOS los componentes de arriba tal cual, EXCEPTO el que el cliente pidio modificar (aplicale solo el cambio puntual que pidio, conservando su "id"). Si pide QUITAR un componente, simplemente no lo incluyas en tu respuesta. NUNCA inventes una vista nueva ni borres componentes que el cliente no menciono cuando lo que esta pidiendo es un ajuste.
+Si en cambio el mensaje describe una situacion financiera nueva (no es un ajuste sobre lo que ya ve), ignora esta seccion y genera una vista nueva normalmente, como si no hubiera nada en pantalla.\n`
+      : ''
+
+  return `Eres Maya, el agente financiero de Banorte One. NO eres un chatbot generico de preguntas y respuestas: tu trabajo es decidir que datos reales necesitas (usando las tools disponibles) y luego describir la interfaz que el cliente debe ver, como un JSON declarativo. Nunca generas HTML ni JSX, y nunca inventas cifras: cada numero que pongas en un componente debe venir de una tool que llamaste en este turno (excepcion: cuando estas EDITANDO un componente existente segun la seccion "Vista actual" de abajo, conservas sus cifras tal cual, no necesitas volver a llamar la tool que las genero).
 
 Cliente actual: ${customer.name}, perfil "${customer.profile}". ${businessLine}
 Cuentas conocidas (ya las tienes, no necesitas volver a pedirlas si no vas a usar mas detalle): ${accountsSummary}.
 
 ${COMPONENT_CATALOG_PROMPT}
-
+${currentViewSection}
 Reglas:
-1. Llama las tools que necesites (puedes llamar varias). No pidas ni asumas un customerId, ya sabes con quien hablas — las tools locales siempre usan al cliente actual.
+1. Llama las tools que necesites (puedes llamar varias). No pidas ni asumas un customerId, ya sabes con quien hablas — las tools locales siempre usan al cliente actual. Si el mensaje es un ajuste puntual sobre la vista actual (ver seccion de arriba) y ya tienes los datos porque estaban en esa vista, no necesitas llamar ninguna tool.
 2. BUSQUEDA WEB OBLIGATORIA cuando aplique: si para responder necesitas un dato que ninguna tool local cubre (precios actuales, viajes, comparar un producto o servicio, noticias, tipos de cambio de monedas que get_exchange_rate no soporte, o cualquier pregunta que dependa de informacion vigente de internet), DEBES usar la tool web_search en vez de quedarte sin responder, decir que no tienes esa informacion, o inventar un numero. Nunca dejes una pregunta sin resolver pudiendo buscarla.
 3. Maximo 6 componentes en total.
 4. No das asesoria financiera personalizada como si fuera garantizada: usa lenguaje de sugerencia ("podrias", "considera", "aproximadamente"), nunca certeza absoluta, y para "recommendation"/"web_insight" evita prometer resultados.
@@ -254,7 +269,11 @@ async function createMessageWithRetry(
   }
 }
 
-export async function runLiveOrchestrator(customerId: string, message: string): Promise<OrchestratorResult> {
+export async function runLiveOrchestrator(
+  customerId: string,
+  message: string,
+  currentView?: UISchema | null,
+): Promise<OrchestratorResult> {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY no esta configurado')
   }
@@ -262,7 +281,7 @@ export async function runLiveOrchestrator(customerId: string, message: string): 
   const customer = getCustomer(customerId)
   const activityLog: McpActivityEntry[] = []
   const anthropic = getClient()
-  const system = buildSystemPrompt(customer)
+  const system = buildSystemPrompt(customer, currentView)
 
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: message }]
   let finalText = ''

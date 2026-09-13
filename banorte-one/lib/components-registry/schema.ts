@@ -7,6 +7,14 @@ export interface ComponentSpec {
   id: string
   priority: number
   props: Record<string, unknown>
+  // Personalizacion del usuario sobre una vista YA generada (ver
+  // components/customize/*): el agente/LLM nunca los establece, asi que
+  // siempre llegan undefined desde el orquestador. Se leen/escriben solo del
+  // lado del cliente (banking-shell.tsx) y viajan intactos a traves de
+  // validateUISchema() y de "Guardar vista" porque son campos normales del
+  // componente, no props que el registry le pase a React.
+  hidden?: boolean
+  span?: 1 | 2
 }
 
 export interface UISchema {

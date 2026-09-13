@@ -288,13 +288,22 @@ button, input { font: inherit; }
 .goal-progress-numbers strong { font-size: 20px; color: var(--ink); }
 .goal-progress-numbers span { font-size: 12px; color: var(--soft-ink); }
 
-.spending-chart ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.spending-chart li { display: grid; grid-template-columns: 90px 1fr auto; align-items: center; gap: 10px; }
 .spending-chart-category { font-size: 12px; color: var(--ink); text-transform: capitalize; }
-.spending-chart-track { height: 8px; background: var(--muted); border-radius: 4px; overflow: hidden; }
-.spending-chart-fill { height: 100%; background: var(--red); border-radius: 4px; }
-.spending-chart-amount { font-size: 12px; color: var(--soft-ink); text-align: right; }
 
+/* Barras verticales (variant: "bar", default) — crecen desde abajo, cada
+   categoria con su propio color dentro de la paleta (ver props.accent en
+   spending-chart.tsx). */
+.spending-chart-columns { display: flex; align-items: flex-end; gap: 14px; height: 170px; padding-top: 6px; }
+.spending-chart-column { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; height: 100%; }
+.spending-chart-column-amount { font-size: 11px; color: var(--soft-ink); margin-bottom: 6px; white-space: nowrap; }
+.spending-chart-column-track { flex: 1; width: 100%; max-width: 36px; display: flex; align-items: flex-end; background: var(--muted); border-radius: 6px 6px 2px 2px; overflow: hidden; }
+.spending-chart-column-bar { width: 100%; border-radius: 6px 6px 2px 2px; min-height: 3px; }
+.spending-chart-column-label { margin-top: 8px; font-size: 11px; color: var(--ink); text-transform: capitalize; text-align: center; line-height: 1.25; }
+.spending-chart-pie-body { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.spending-chart-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 140px; }
+.spending-chart-legend li { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 8px; }
+.spending-chart-swatch { width: 10px; height: 10px; border-radius: 3px; }
+.spending-chart-legend .spending-chart-category { text-align: left; }
 .alert-card { flex-direction: row; align-items: flex-start; gap: 12px; }
 .alert-card svg { width: 22px; flex: none; margin-top: 2px; }
 .alert-card p { margin: 4px 0 0; font-size: 13px; color: var(--soft-ink); line-height: 1.4; }
@@ -336,7 +345,8 @@ button, input { font: inherit; }
 @media (max-width: 800px) {
   .demo-persona-switcher { margin: 10px 0; }
   .business-summary-grid { grid-template-columns: 1fr; }
-  .spending-chart li { grid-template-columns: 70px 1fr auto; }
+  .spending-chart-columns { gap: 8px; }
+  .spending-chart-column-track { max-width: 26px; }
 }
 
 .comparison-chart-header { display: flex; flex-direction: column; gap: 2px; }
@@ -376,7 +386,35 @@ button, input { font: inherit; }
 .save-view-trigger:hover:not(:disabled) { background: #fff0f3; }
 .save-view-trigger.is-saved { border-color: #bfe0cd; background: #f1faf5; color: #178657; cursor: default; }
 .save-view-trigger:disabled { opacity: .9; }
+/* --- Personalizar vista (ver components/customize/*) --- */
+.customize-toggle { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: white; color: var(--ink); font-weight: 700; font-size: 12px; padding: 9px 14px; cursor: pointer; border-radius: 999px; white-space: nowrap; }
+.customize-toggle svg { width: 14px; }
+.customize-toggle:hover { background: var(--muted); }
+.customize-toggle.is-active { border-color: var(--red); background: var(--red); color: white; }
 
+.component-card-shell { position: relative; height: 100%; }
+.component-card-shell.is-customizable > .fin-card,
+.component-card-shell.is-customizable > * { outline: 1.5px dashed transparent; outline-offset: 3px; border-radius: 8px; transition: outline-color .12s ease; }
+.component-card-shell.is-customizable:hover > * { outline-color: var(--line); }
+
+.component-toolbar { position: absolute; top: -12px; right: 8px; z-index: 2; display: flex; align-items: center; gap: 2px; background: var(--ink); border-radius: 999px; padding: 4px; box-shadow: 0 6px 16px rgba(20,26,32,.28); }
+.component-toolbar button { width: 24px; height: 24px; display: grid; place-items: center; border: 0; background: transparent; color: white; cursor: pointer; border-radius: 50%; }
+.component-toolbar button:hover:not(:disabled) { background: rgba(255,255,255,.18); }
+.component-toolbar button:disabled { opacity: .35; cursor: default; }
+.component-toolbar button.is-danger:hover { background: var(--red); }
+.component-toolbar svg { width: 13px; }
+
+.dashboard-card-span-2 { grid-column: span 2; }
+
+.hidden-tray { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; border: 1px dashed var(--line); border-radius: 12px; background: var(--muted); }
+.hidden-tray-label { font-size: 12px; color: var(--soft-ink); font-weight: 700; }
+.hidden-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: white; color: var(--ink); font-size: 12px; padding: 6px 10px; border-radius: 999px; cursor: pointer; }
+.hidden-chip:hover { border-color: var(--red); color: var(--deep-red); }
+.hidden-chip svg { width: 13px; }
+
+@media (max-width: 900px) {
+  .dashboard-card-span-2 { grid-column: span 1; }
+}
 .modal-backdrop { position: fixed; inset: 0; background: rgba(35,48,58,.45); z-index: 40; }
 .modal-popup { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 41; width: min(460px, 92vw); max-height: min(640px, 86vh); overflow-y: auto; background: white; border-radius: 16px; padding: 26px 26px 24px; box-shadow: 0 30px 60px rgba(20,26,32,.32); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

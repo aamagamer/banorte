@@ -227,27 +227,154 @@ async function buildComponentsForSituation(
   return components.slice(0, limit)
 }
 
+// --- Edicion de la vista actual (sin regenerar todo) ------------------------
+// Cuando el cliente ya tiene una vista en pantalla y su mensaje es un ajuste
+// puntual sobre ella ("cambiale el color a azul", "hazla de pastel",
+// "agranda la de gastos", "quita mis movimientos", "pon primero mis
+// cuentas") — en vez de correr detect_situation y armar un dashboard nuevo
+// desde cero, el cambio se aplica directamente sobre los componentes que YA
+// estaban ahi. Si el mensaje no coincide con ningun patron de edicion, se
+// regresa null y el pipeline normal de mas abajo corre exactamente como
+// antes — eso es lo que garantiza que pedir una situacion nueva nunca se
+// rompe. Esto es el espejo en reglas de lo que llm-orchestrator.ts le pide a
+// Claude hacer via prompt cuando hay ANTHROPIC_API_KEY (ver
+// "Vista actual en pantalla" en buildSystemPrompt).
+//
+// "Eliminar" aqui SI borra el componente de verdad (a diferencia del boton
+// "Personalizar" del cliente, que solo lo oculta y lo deja recuperable) —
+// asi lo pidio el brief: por chat, "quitar" es definitivo.
+const COMPONENT_KEYWORDS: [RegExp, ComponentSpec['type']][] = [
+  [/gasto|categor[ií]a/i, 'spending_chart'],
+  [/meta|ahorro/i, 'goal_progress'],
+  [/movimiento|transacci[oó]n/i, 'transaction_list'],
+  [/cuenta/i, 'account_card'],
+  [/comparaci[oó]n|poder adquisitivo/i, 'comparison_chart'],
+  [/negocio/i, 'business_summary'],
+  [/tarjeta/i, 'card_controls'],
+  [/alerta/i, 'alert'],
+  [/recomendaci[oó]n/i, 'recommendation'],
+  [/tipo de cambio|d[oó]lar|divisa/i, 'exchange_rate'],
+]
+
+const ACCENT_BY_WORD: Record<string, string> = {
+  rojo: 'red',
+  azul: 'blue',
+  verde: 'green',
+  morado: 'purple',
+  purpura: 'purple',
+  negro: 'black',
+}
+
+function findTargetComponent(message: string, components: ComponentSpec[]): ComponentSpec | undefined {
+  for (const [pattern, type] of COMPONENT_KEYWORDS) {
+    if (pattern.test(message)) {
+      const match = components.find((c) => c.type === type)
+      if (match) return match
+    }
+  }
+  return undefined
+}
+
+function replaceComponentProps(view: UISchema, id: string, props: Record<string, unknown>): UISchema {
+  return { ...view, components: view.components.map((c) => (c.id === id ? { ...c, props } : c)) }
+}
+
+function replaceComponentSpan(view: UISchema, id: string, span: 1 | 2): UISchema {
+  return { ...view, components: view.components.map((c) => (c.id === id ? { ...c, span } : c)) }
+}
+
+function moveComponentToTop(view: UISchema, id: string): UISchema {
+  const target = view.components.find((c) => c.id === id)
+  if (!target) return view
+  const rest = view.components.filter((c) => c.id !== id)
+  return { ...view, components: [{ ...target, priority: 1 }, ...rest.map((c, i) => ({ ...c, priority: i + 2 }))] }
+}
+
+function tryApplyEditIntent(message: string, currentView: UISchema | null | undefined): UISchema | null {
+  if (!currentView || currentView.components.length === 0) return null
+
+  // 1) Eliminar (real, no ocultar).
+  // Sin \b de cierre a proposito: el imperativo en español pega el pronombre
+  // al verbo ("quitalos", "eliminala", "borralo"), asi que exigir limite de
+  // palabra al final le fallaba a la forma mas comun de pedirlo.
+  if (/\b(quita|quitar|elimina|eliminar|borra|borrar)/i.test(message)) {
+    const target = findTargetComponent(message, currentView.components)
+    if (target) return { ...currentView, components: currentView.components.filter((c) => c.id !== target.id) }
+  }
+
+  // 2) Cambiar tipo de grafica — hoy solo spending_chart tiene variante.
+  if (/pastel|\bdona\b|donut|circular/i.test(message)) {
+    const target = currentView.components.find((c) => c.type === 'spending_chart')
+    if (target) return replaceComponentProps(currentView, target.id, { ...target.props, variant: 'pie' })
+  }
+  if (/\bbarras?\b/i.test(message)) {
+    const target = currentView.components.find((c) => c.type === 'spending_chart')
+    if (target) return replaceComponentProps(currentView, target.id, { ...target.props, variant: 'bar' })
+  }
+
+  // 3) Color / acento.
+  const colorWord = message.match(/\b(rojo|azul|verde|morado|purpura|p[uú]rpura|negro)\b/i)?.[1]?.toLowerCase()
+  if (colorWord) {
+    const accent = ACCENT_BY_WORD[colorWord.normalize('NFD').replace(/[\u0300-\u036f]/g, '')]
+    const target = findTargetComponent(message, currentView.components) ?? currentView.components.find((c) => c.type === 'spending_chart')
+    if (accent && target) return replaceComponentProps(currentView, target.id, { ...target.props, accent })
+  }
+
+  // 4) Agrandar / achicar.
+  if (/agranda|agrandar|m[aá]s grande|expande|expandir/i.test(message)) {
+    const target = findTargetComponent(message, currentView.components)
+    if (target) return replaceComponentSpan(currentView, target.id, 2)
+  }
+  if (/achica|achicar|m[aá]s chic[ao]|reduce|reducir/i.test(message)) {
+    const target = findTargetComponent(message, currentView.components)
+    if (target) return replaceComponentSpan(currentView, target.id, 1)
+  }
+
+  // 5) Reordenar (mover al frente).
+  if (/pon primero|pon.*arriba|mu[eé]vel[ao] arriba|sube/i.test(message)) {
+    const target = findTargetComponent(message, currentView.components)
+    if (target) return moveComponentToTop(currentView, target.id)
+  }
+
+  return null
+}
+
 // Punto de entrada publico: LIVE (Claude con tool-calling real, ver
 // lib/agent/llm-orchestrator.ts) cuando hay ANTHROPIC_API_KEY configurado;
 // si no hay llave, o LIVE truena por cualquier motivo (red, rate limit,
 // respuesta mal formada del modelo), cae a FALLBACK determinista — la demo
 // nunca debe quedarse sin interfaz frente al jurado (ver docs/MCP.md,
-// seccion 'LIVE vs FALLBACK').
-export async function runOrchestrator(customerId: string, message: string): Promise<OrchestratorResult> {
+// seccion 'LIVE vs FALLBACK'). "currentView" es lo que el cliente tiene en
+// pantalla ahorita (banking-shell.tsx lo manda en cada mensaje) — permite
+// que un mensaje se interprete como edicion puntual en vez de vista nueva.
+export async function runOrchestrator(
+  customerId: string,
+  message: string,
+  currentView?: UISchema | null,
+): Promise<OrchestratorResult> {
   if (process.env.ANTHROPIC_API_KEY) {
     try {
       const { runLiveOrchestrator } = await import('./llm-orchestrator')
-      return await runLiveOrchestrator(customerId, message)
+      return await runLiveOrchestrator(customerId, message, currentView)
     } catch (error) {
       console.error('[orchestrator] LIVE (Claude tool-calling) fallo, usando FALLBACK', error)
     }
   }
-  return runFallbackOrchestrator(customerId, message)
+  return runFallbackOrchestrator(customerId, message, currentView)
 }
 
-async function runFallbackOrchestrator(customerId: string, message: string): Promise<OrchestratorResult> {
+async function runFallbackOrchestrator(
+  customerId: string,
+  message: string,
+  currentView?: UISchema | null,
+): Promise<OrchestratorResult> {
   const activityLog: McpActivityEntry[] = []
   const customer = getCustomer(customerId)
+
+  const edited = tryApplyEditIntent(message, currentView)
+  if (edited) {
+    return { reply: 'Listo, ya lo ajuste.', uiSchema: validateUISchema(edited), mcpActivity: activityLog }
+  }
 
   try {
     await callTool('get_customer_profile', { customerId }, activityLog)
@@ -265,6 +392,17 @@ async function runFallbackOrchestrator(customerId: string, message: string): Pro
     await callTool('get_allowed_components', {}, activityLog)
 
     const components = await buildComponentsForSituation(situation?.id ?? null, customerId, activityLog)
+
+    // FALLBACK (motor de reglas, sin LLM) tambien entiende "grafica de
+    // pastel/dona" para spending_chart, igual que LIVE (ver
+    // COMPONENT_CATALOG_PROMPT en llm-orchestrator.ts) — asi la variante pie
+    // funciona pidiendola por chat incluso sin ANTHROPIC_API_KEY.
+    if (/pastel|\bdona\b|donut|circular/i.test(message)) {
+      for (const component of components) {
+        if (component.type === 'spending_chart') component.props = { ...component.props, variant: 'pie' }
+      }
+    }
+
     const explanation = explainSituation(situation?.id ?? null, customer)
 
     if (situation) {
